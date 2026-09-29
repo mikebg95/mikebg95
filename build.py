@@ -146,8 +146,9 @@ def build(theme, stats):
     rows += [None, prompt("")]                 # final prompt with blinking cursor
     cursor_row = len(rows) - 1
 
-    top = 64                                   # first baseline below the title bar
-    height = max(top + (len(rows) - 1) * LINE + 26, 600)
+    block = (len(rows) - 1) * LINE + 14       # first cap-height to cursor bottom
+    height = max(block + 40 + 2 * 20, 600)     # title bar + min. 20px margin top and bottom
+    top = round(40 + (height - 40 - block) / 2 + 11)   # first baseline: panel vertically centred
 
     right = "\n".join(f'<tspan x="{RIGHT_X}" y="{top + i * LINE}">{r}</tspan>' for i, r in enumerate(rows) if r)
 
