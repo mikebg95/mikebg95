@@ -9,6 +9,7 @@ portrait_dark.txt / portrait_light.txt (see tools/make_ascii.py).
 """
 import json
 import os
+import urllib.parse
 import urllib.request
 from xml.sax.saxutils import escape
 
@@ -35,9 +36,15 @@ SKILLS = [
 ]
 CONTACT = [("mail", "mikebgoldman95@gmail.com"), ("linkedin", "in/mikebg95")]
 
+# Apps built fully with AI agents: shown on the card, but NOT counted in the stats
+VIBECODED = ["kalistenix", "dominio-de-ingles", "wayfolk", "prato", "mathaverse",
+             "vibegod", "whats-yapp", "conspect-game", "fight-your-shadow"]
+# Repos left out of the stats: the vibecoded apps + this profile repo itself
+EXCLUDED = {r.lower() for r in VIBECODED} | {USERNAME.lower()}
+
 # Fallbacks used when the GitHub API is unreachable (e.g. running offline)
-DEFAULT_STATS = {"repos": 43, "stars": 27, "commits": 818,
-                 "langs": [["Java", 20], ["JavaScript", 14], ["Python", 2], ["Other", 7]]}
+DEFAULT_STATS = {"repos": 41, "stars": 27, "commits": 814,
+                 "langs": [["Java", 20], ["JavaScript", 14], ["Other", 5]]}
 
 LANG_COLORS = {"Java": "#b07219", "JavaScript": "#f1e05a", "Python": "#3572A5", "TypeScript": "#3178c6",
                "Vue": "#41b883", "HTML": "#e34c26", "Dart": "#00B4AB", "C": "#555555", "Other": "#8b949e"}
@@ -64,19 +71,22 @@ def _get(url):
 
 def github_stats():
     try:
-        repos = [r for r in _get(f"https://api.github.com/users/{USERNAME}/repos?per_page=100&type=owner")
-                 if not r["fork"]]
+        all_repos = _get(f"https://api.github.com/users/{USERNAME}/repos?per_page=100&type=owner")
+        repos = [r for r in all_repos if not r["fork"] and r["name"].lower() not in EXCLUDED]
+        skipped = [r["full_name"] for r in all_repos if r["name"].lower() in EXCLUDED]
         stars = sum(r["stargazers_count"] for r in repos)
         counts = {}
         for r in repos:
             if r["language"]:
                 counts[r["language"]] = counts.get(r["language"], 0) + 1
         top = sorted(counts.items(), key=lambda kv: -kv[1])
-        langs = [list(kv) for kv in top[:3]]
-        rest = sum(n for _, n in top[3:])
+        shown = [kv for kv in top[:3] if kv[1] >= 2]   # single-repo languages go to "Other"
+        langs = [list(kv) for kv in shown]
+        rest = sum(n for _, n in top[len(shown):])
         if rest:
             langs.append(["Other", rest])
-        commits = _get(f"https://api.github.com/search/commits?q=author:{USERNAME}")["total_count"]
+        query = urllib.parse.quote(" ".join([f"author:{USERNAME}"] + [f"-repo:{name}" for name in skipped]))
+        commits = _get(f"https://api.github.com/search/commits?q={query}")["total_count"]
         return {"repos": len(repos), "stars": stars, "commits": commits, "langs": langs}
     except Exception as e:  # offline / rate-limited: keep the card building
         print("GitHub API unavailable, using defaults:", e)
@@ -128,6 +138,9 @@ def build(theme, stats):
     total = sum(n for _, n in stats["langs"]) or 1
     rows.append("".join(t("● ", fill=LANG_COLORS.get(name, LANG_COLORS["Other"]))
                         + t(f"{name} {round(100 * n / total)}%    ", "text") for name, n in stats["langs"]))
+    rows += [None, prompt("ls ~/vibecoded") + t("  # AI-built, not in stats", "muted")]
+    for chunk in wrap(VIBECODED, WRAP + KEY_COLS):
+        rows.append(t("  ", "pink").join(t(v + "/", "pink") for v in chunk))
     rows += [None, prompt("contact")]
     rows.append(t("✉ ", "red") + t(CONTACT[0][1], "text") + t("    in ", "blue") + t(CONTACT[1][1], "text"))
     rows += [None, prompt("")]                 # final prompt with blinking cursor
